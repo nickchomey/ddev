@@ -48,7 +48,7 @@ func NewWordpressConfig(app *DdevApp, absPath string) *WordpressConfig {
 		DatabaseName:     "db",
 		DatabaseUsername: "db",
 		DatabasePassword: "db",
-		DatabaseHost:     "ddev-" + app.Name + "-db",
+		DatabaseHost:     "db",
 		DeployURL:        app.GetPrimaryURL(),
 		Docroot:          "/var/www/html/docroot",
 		TablePrefix:      "wp_",
@@ -62,9 +62,9 @@ func NewWordpressConfig(app *DdevApp, absPath string) *WordpressConfig {
 		SecureAuthSalt:   util.RandString(64),
 		Signature:        nodeps.DdevFileSignature,
 		SiteSettings:     "wp-config.php",
-		SiteSettingsDdev: "wp-config-ddev.php",
+		SiteSettingsDdev: "wp-config-development.php",
 		AbsPath:          absPath,
-		DbCharset:        "utf8",
+		DbCharset:        "utf8mb4",
 		DbCollate:        "",
 	}
 }
@@ -95,15 +95,15 @@ Please comment out any database connection settings in your wp-config.php and
 add the following snippet to your wp-config.php, near the bottom of the file
 and before the include of wp-settings.php:
 
-// Include for ddev-managed settings in wp-config-ddev.php.
-$ddev_settings = dirname(__FILE__) . '/wp-config-ddev.php';
+// Include for ddev-managed settings in wp-config-development.php.
+$ddev_settings = dirname(__FILE__) . '/wp-config-development.php';
 if (is_readable($ddev_settings) && !defined('DB_USER')) {
   require_once($ddev_settings);
 }
 
 If you don't care about those settings, or config is managed in a .env
 file, etc, then you can eliminate this message by putting a line that says
-// wp-config-ddev.php not needed
+// wp-config-development.php not needed
 in your wp-config.php
 `
 
@@ -124,34 +124,8 @@ func createWordpressSettingsFile(app *DdevApp) (string, error) {
 		return "", err
 	}
 
-	// Check if an existing WordPress settings file exists
-	if fileutil.FileExists(app.SiteSettingsPath) {
-		// Check if existing WordPress settings file is ddev-managed
-		sigExists, err := fileutil.FgrepStringInFile(app.SiteSettingsPath, nodeps.DdevFileSignature)
-		if err != nil {
-			return "", err
-		}
-
-		if sigExists {
-			// Settings file is ddev-managed, overwriting is safe
-			if err := writeWordpressSettingsFile(config, app.SiteSettingsPath); err != nil {
-				return "", err
-			}
-		} else {
-			// Settings file exists and is not ddev-managed, alert the user to the location
-			// of the generated DDEV settings file
-			includeExists, err := fileutil.FgrepStringInFile(app.SiteSettingsPath, "wp-config-ddev.php")
-			if err != nil {
-				util.Warning("Unable to check that the DDEV settings file has been included: %v", err)
-			}
-
-			if includeExists {
-				util.Success("Include of %s found in %s", app.SiteDdevSettingsFile, app.SiteSettingsPath)
-			} else {
-				util.Warning(wordpressConfigInstructions, app.SiteDdevSettingsFile)
-			}
-		}
-	} else {
+	if ! fileutil.FileExists(app.SiteSettingsPath) {
+		
 		// If settings file does not exist, write basic settings file including it
 		if err := writeWordpressSettingsFile(config, app.SiteSettingsPath); err != nil {
 			return "", err
@@ -209,7 +183,7 @@ func writeWordpressDdevSettingsFile(config *WordpressConfig, filePath string) er
 		}
 	}
 
-	t, err := template.New("wp-config-ddev.php").ParseFS(bundledAssets, "wordpress/wp-config-ddev.php")
+	t, err := template.New("wp-config-development.php").ParseFS(bundledAssets, "wordpress/wp-config-development.php")
 	if err != nil {
 		return err
 	}
@@ -250,11 +224,8 @@ func isWordpressApp(app *DdevApp) bool {
 	if err != nil {
 		// Multiple abspath candidates is an issue, but is still a valid
 		// indicator that this is a WordPress app
-		if strings.Contains(err.Error(), "multiple") {
-			return true
-		}
+		return strings.Contains(err.Error(), "multiple")
 
-		return false
 	}
 
 	return true

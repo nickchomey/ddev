@@ -1,19 +1,94 @@
 <?php
 {{ $config := . }}/**
- * #ddev-generated: Automatically generated WordPress settings file.
- * ddev manages this file and may delete or overwrite the file unless this comment is removed.
- * It is recommended that you leave this file alone.
+ * The base configuration for WordPress
  *
- * @package ddevapp
+ * The wp-config.php creation script uses this file during the installation.
+ * You don't have to use the website, you can copy this file to "wp-config.php"
+ * and fill in the values.
+ *
+ * This file contains the following configurations:
+ *
+ * * Database settings
+ * * Secret keys
+ * * Database table prefix
+ * * ABSPATH
+ *
+ * @link https://developer.wordpress.org/advanced-administration/wordpress/wp-config/
+ *
+ * @package WordPress
  */
 
+
+/* 
+Dynamic site configuration depending on the environment type.
+
+Requires/includes wp-config-{WP_ENVIRONMENT_TYPE}.php if we're not in production, to pre-emptively override the production defaults below
+
+DDEV sets WP_ENVIRONMENT_TYPE to "development" by default and has created a wp-config-development.php file adjacent to wp-config.php.
+
+If you would like to set other environment configs, you can set WP_ENVIRONMENT_TYPE to "local" or "staging" in your project's .ddev/config.yaml's web_environment parameter. Then create a commensurate wp-config-{WP_ENVIRONMENT_TYPE}.php file to be loaded in that environment.
+
+*/
+
+$env_type = getenv('WP_ENVIRONMENT_TYPE') ?: 'production';
+
+if ($env_type != "production" ) {
+    $ddev_settings = dirname(__FILE__) . "/wp-config-$env_type.php";
+    if (is_readable($ddev_settings)){
+        require_once($ddev_settings);
+    } else {
+        //TODO: this is probably not going to actually log anything, because logging gets set up later.
+        error_log("No $ddev_settings file found. Using defaults. If the site is not working, look at wp-config.php and create a wp-config-$env_type.php file, and set the WP_ENVIRONMENT_TYPE.");
+        
+        // exit the request until the environment_type and config files are set up appropriately
+        
+        http_response_code(500);
+        echo("No $ddev_settings file found. Using defaults. If the site is not working, look at wp-config.php and create a wp-config-$env_type.php file, and set the WP_ENVIRONMENT_TYPE.");
+        exit();
+    }
+}
+
+
+// ** Database settings - You can get this info from your web host ** //
+
+/** The name of the database for WordPress */
+defined('DB_NAME') || define('DB_NAME', '{{ $config.DatabaseName }}');
+
+/** Database username */
+defined('DB_USER') || define('DB_USER', '{{ $config.DatabaseUsername }}');
+
+/** Database password */
+defined('DB_PASSWORD') || define('DB_PASSWORD', '{{ $config.DatabasePassword }}');
+
+/** Database hostname */
+defined('DB_HOST') || define('DB_HOST', 'db');
+
 /** Database charset to use in creating database tables. */
-define( 'DB_CHARSET', '{{ $config.DbCharset }}' );
+defined('DB_CHARSET') || define('DB_CHARSET', '{{ $config.DbCharset }}');
 
 /** The database collate type. Don't change this if in doubt. */
-define( 'DB_COLLATE', '{{ $config.DbCollate }}' );
+defined('DB_COLLATE') || define('DB_COLLATE', '{{ $config.DbCollate }}');
 
-/** Authentication Unique Keys and Salts. */
+
+// NOTE: Commented-out, because really this can just be set in the DB open install/import. This should solve the problem of what to do about the dev URL... Though, DDEV is still going to create a Traefik rule and hosts file entry. Moreover, having it managed anywhere by ddev messes everything up in the DB when posts, links and uploads are created.
+
+// /** WP_HOME URL */
+// defined('WP_HOME') || define('WP_HOME', '{{ $config.DeployURL }}');
+
+// /** WP_SITEURL location */
+// defined('WP_SITEURL') || define('WP_SITEURL', WP_HOME . '/{{ $config.AbsPath  }}');
+
+/**#@+
+ * Authentication unique keys and salts.
+ *
+ * Change these to different unique phrases! You can generate these using
+ * the {@link https://api.wordpress.org/secret-key/1.1/salt/ WordPress.org secret-key service}.
+ *
+ * You can change these at any point in time to invalidate all existing cookies.
+ * This will force all users to have to log in again.
+ *
+ * @since 2.6.0
+ */
 define( 'AUTH_KEY', '{{ $config.AuthKey }}' );
 define( 'SECURE_AUTH_KEY', '{{ $config.SecureAuthKey }}' );
 define( 'LOGGED_IN_KEY', '{{ $config.LoggedInKey }}' );
@@ -23,6 +98,36 @@ define( 'SECURE_AUTH_SALT', '{{ $config.SecureAuthSalt }}' );
 define( 'LOGGED_IN_SALT', '{{ $config.LoggedInSalt }}' );
 define( 'NONCE_SALT', '{{ $config.NonceSalt }}' );
 
+/**#@-*/
+
+/**
+ * WordPress database table prefix.
+ *
+ * You can have multiple installations in one database if you give each
+ * a unique prefix. Only numbers, letters, and underscores please!
+ */
+if (!isset($table_prefix) || empty($table_prefix)) {
+    // phpcs:disable WordPress.WP.GlobalVariablesOverride.Prohibited
+    $table_prefix = 'wp_';
+    // phpcs:enable
+}
+
+/**
+ * For developers: WordPress debugging mode.
+ *
+ * Change this to true to enable the display of notices during development.
+ * It is strongly recommended that plugin and theme developers use WP_DEBUG
+ * in their development environments.
+ *
+ * For information on other constants that can be used for debugging,
+ * visit the documentation.
+ *
+ * @link https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/
+ */
+defined('WP_DEBUG') || define('WP_DEBUG', false);
+defined('WP_DEBUG_LOG') || define('WP_DEBUG_LOG', false);
+defined('WP_DEBUG_DISPLAY') || define('WP_DEBUG_DISPLAY', false);
+
 /* Add any custom values between this line and the "stop editing" line. */
 
 
@@ -30,15 +135,11 @@ define( 'NONCE_SALT', '{{ $config.NonceSalt }}' );
 /* That's all, stop editing! Happy publishing. */
 
 /** Absolute path to the WordPress directory. */
-defined( 'ABSPATH' ) || define( 'ABSPATH', dirname( __FILE__ ) . '/{{ $config.AbsPath }}' );
-
-// Include for settings managed by ddev.
-$ddev_settings = dirname( __FILE__ ) . '/wp-config-ddev.php';
-if ( ! defined( 'DB_USER' ) && getenv( 'IS_DDEV_PROJECT' ) == 'true' && is_readable( $ddev_settings ) ) {
-	require_once( $ddev_settings );
+if (!defined('ABSPATH')) {
+    define('ABSPATH', __DIR__ . '/{{ $config.AbsPath }}');
 }
 
-/** Include wp-settings.php */
+/** Sets up WordPress vars and included files. */
 if ( file_exists( ABSPATH . '/wp-settings.php' ) ) {
 	require_once ABSPATH . '/wp-settings.php';
 }
