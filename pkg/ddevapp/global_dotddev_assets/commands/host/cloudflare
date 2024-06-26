@@ -1,0 +1,510 @@
+#!/bin/bash
+
+## Description: Publicly serves current project via Cloudflare Tunnel
+## Usage: cloudflare [flags] [args]
+## Example: "ddev cloudflare domain list"
+## CanRunGlobally: true
+## Flags: [{"Name":"flag1","Shorthand":"f","Usage":"flag1 usage"},{"Name":"flag2","Usage":"flag2 usage"}]
+
+
+
+# install instructions are from here:
+# https://pkg.cloudflare.com/index.html#cloudflared-packages
+# https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/#windows
+
+install_debian_ubuntu() {
+    echo "Installing on Debian/Ubuntu..."
+    
+    # Determine the distribution name (e.g., buster, focal)
+    distro_name=$(lsb_release -cs)
+    
+    # Check if the release file is available
+    release_url="https://pkg.cloudflare.com/cloudflared/${distro_name}/main/binary-amd64/Packages"
+    if ! curl --output /dev/null --silent --head --fail "$release_url"; then
+        echo "Release file for ${distro_name} not found, using 'jammy' instead"
+        distro_name="jammy"
+    fi
+    
+    # Add Cloudflare GPG key
+    sudo mkdir -p --mode=0755 /usr/share/keyrings
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+    
+    # Add Cloudflare repository to apt sources
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $distro_name main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+    
+    # Install cloudflared
+    sudo apt-get update && sudo apt-get install cloudflared -y
+}
+
+install_amazon_linux() {
+    echo "Installing on Amazon Linux..."
+    
+    curl -fsSl https://pkg.cloudflare.com/cloudflared-ascii.repo | sudo tee /etc/yum.repos.d/cloudflared-ascii.repo
+
+    #update repo
+    sudo yum update
+
+    # install cloudflared
+    sudo yum install cloudflared -y
+}
+
+install_rhel() {
+    echo "Installing on RHEL..."
+    
+    # Add cloudflared.repo to /etc/yum.repos.d/ 
+    curl -fsSl https://pkg.cloudflare.com/cloudflared-ascii.repo | sudo tee /etc/yum.repos.d/cloudflared.repo
+
+    #update repo
+    sudo yum update
+
+    # install cloudflared
+    sudo yum install cloudflared -y
+}
+
+install_centos_7() {
+    echo "Installing on CentOS 7..."
+    
+    # Install yum-utils
+    sudo yum install yum-utils
+    
+    # Add cloudflared.repo to config-manager
+    sudo yum-config-manager --add-repo https://pkg.cloudflare.com/cloudflared-ascii.repo
+    
+    # Install cloudflared
+    sudo yum install cloudflared -y
+}
+
+install_centos_8_stream() {
+    echo "Installing on CentOS 8/Stream..."
+    
+    # Add cloudflared.repo to config-manager
+    sudo dnf config-manager --add-repo https://pkg.cloudflare.com/cloudflared-ascii.repo
+    
+    # Install cloudflared
+    sudo dnf install cloudflared -y
+}
+
+install_mac() {
+    echo "Installing on macOS..."
+    
+    # Install cloudflared using Homebrew
+    brew install cloudflared
+}
+
+install_windows() {
+    echo "Installing on Windows..."
+    
+    # Install cloudflared using winget
+    winget install --id Cloudflare.cloudflared
+}
+
+install() {
+
+    # check if cloudflared is already available in $PATH
+    if command -v cloudflared &> /dev/null; then
+        echo "cloudflared is already installed"
+        exit 0
+    fi
+    
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        x86_64)
+            ARCH="amd64"
+            ;;
+        arm64|aarch64)
+            ARCH="arm64"
+            ;;
+        armv6l)
+            ARCH="armv6"
+            ;;
+        *)
+            echo "Unsupported CPU architecture for flarectl: $ARCH. You will need to create CNAME records manually for your Cloudflare Tunnel Routes"
+            ;;
+    esac
+    
+
+    # Determine OS and version
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        case $ID in
+            amzn)
+                install_amazon_linux
+                ;;
+            debian|ubuntu)
+                install_debian_ubuntu
+                ;;
+            rhel)
+                install_rhel
+                ;;
+            centos)
+                if [ -f /etc/centos-release ]; then
+                    if grep -q "CentOS Stream" /etc/centos-release; then
+                        install_centos_8_stream
+                    else
+                        centos_version=$(cat /etc/centos-release | awk '{print $4}' | cut -d. -f1)
+                        case $centos_version in
+                            7)
+                                install_centos_7
+                                ;;
+                            *)
+                                echo "Unsupported CentOS version: $centos_version"
+                                exit 1
+                                ;;
+                        esac
+                    fi
+                else
+                    echo "Cannot determine CentOS version"
+                    exit 1
+                fi
+                ;;
+            *)
+                echo "Unsupported OS: $ID"
+                exit 1
+                ;;
+        esac
+        
+        OS="linux"
+        
+        
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        #install_mac
+        OS="darwin"
+    elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+        #install_windows
+        OS="windows"
+    else
+        echo "Cannot determine OS"
+        exit 1
+    fi
+    
+    # if command -v cloudflared &> /dev/null; then
+    #     echo "cloudflared is already installed"
+    #     exit 0
+    # fi
+    
+    
+    flarectl_version=$(~/.ddev/bin/flarectl -version)
+    extracted_version=$(echo "$flarectl_version" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+            
+    latest_release_info=$(curl -s "https://api.github.com/repos/cloudflare/cloudflare-go/releases/latest")
+
+    # Extract the tag name from the latest release information
+    latest_tag=$(echo "$latest_release_info" | jq -r '.tag_name')
+    
+    formatted_tag=${latest_tag#v}
+    
+    if [[ "$extracted_version" != "$formatted_tag" ]]; then
+        
+        # Construct the download URL using the latest tag
+        download_url="https://github.com/cloudflare/cloudflare-go/releases/download/${latest_tag}/flarectl_${formatted_tag}_${OS}_${ARCH}.tar.gz"
+            
+        echo "Downloading flarectl ${latest_tag} for ${OS}_${ARCH}..."
+        
+        echo $download_url
+        
+        # Download the .tar.gz file to a temporary location
+        curl -L "$download_url" -o /tmp/flarectl.tar.gz
+        
+        # Unpack the .tar.gz file
+        tar -xzf /tmp/flarectl.tar.gz -C /tmp
+
+        # Move the extracted file(s) to the desired location
+        # Assuming 'flarectl' is the name of the binary in the tarball
+        mv /tmp/flarectl ~/.ddev/bin/
+
+        # Clean up the temporary .tar.gz file
+        rm /tmp/flarectl.tar.gz
+                
+        #curl -L $download_url | tar -xz -C ~/.ddev/bin
+        sudo chmod +x ~/.ddev/bin/flarectl
+    else
+        echo "flarectl already up to date"
+    fi
+    
+    connect
+}
+
+connect() {
+    set_new_token=true
+    
+    # check if there's already a token
+    if [ -f ~/.cloudflared/token.txt ]; then
+        # read the value 
+        cf_token=$(cat ~/.cloudflared/token.txt)
+        
+        
+        read -p "
+Token \"$cf_token\" already exists. Would you like to replace it (y/N)? 
+" confirmation
+
+        if [ -z "$confirmation" ]; then
+            confirmation="no"
+        fi
+
+        case ${confirmation,,} in
+            y|yes ) return;;
+            n|no ) set_new_token=false;;
+            * ) set_new_token=false;;
+        esac
+        
+    fi
+    
+        
+    if $set_new_token; then
+        read -p "
+        
+Enter your Cloudflare API token: " cf
+        echo $cf > ~/.cloudflared/token.txt
+    fi
+    
+    set_new_login=true
+    
+    #check for ~/.cloudflared/cert.pem
+    if [ -f ~/.cloudflared/cert.pem ]; then
+        
+        read -p "
+You have already connected your server with the Cloudflare Tunnels service. This will work across all of your registered zones/domains in Cloudflare. 
+
+Would you like to replace it (y/N)? " confirmation
+
+        if [ -z "$confirmation" ]; then
+            confirmation="no"
+        fi
+        
+        case ${confirmation,,} in
+            y|yes ) return;;
+            n|no ) set_new_login=false;;
+            * ) set_new_login=false;;
+        esac
+    fi
+    
+    if $set_new_login; then
+        cloudflared tunnel login
+    fi
+    
+    
+    # create a tunnel if there isn't already one
+    
+    create_tunnel=true
+    create_config=true
+    
+    if ls ~/.cloudflared/*.json 1> /dev/null 2>&1; then
+        # Get the first JSON file in the directory
+        json_file=$(ls ~/.cloudflared/*.json | head -n 1)
+
+        # Extract the filename without the path and extension
+        filename_without_extension="${json_file##*/}"
+        tunnel_id="${filename_without_extension%.json}"
+
+        create_tunnel=false
+        
+        # create config.yml file for cf tunnel, if it doesn't already exist
+        if [ -f ~/.cloudflared/config.yml ]; then
+            create_config=false
+        fi
+                    
+    fi
+    
+    # if create_tunnel is true, prompt for tunnel name
+    if $create_tunnel; then
+        read -p "
+Enter the name of the tunnel you would like to create: " tunnel_name
+    
+        #~/.ddev/bin/cloudflared tunnel create $tunnel_name
+        cloudflared tunnel create $tunnel_name
+        
+        # get the "TunnelID" from the the json file
+        tunnel_id=$(cat ~/.cloudflared/*.json | jq -r '.TunnelID')
+    fi
+    
+    
+    if $create_config; then
+        #Create CF Tunnel config.yml file
+        echo "
+Creating ~/.cloudflared/config.yml file
+"
+        
+        echo "tunnel: $tunnel_id
+credentials-file: /home/nick/.cloudflared/$tunnel_id.json
+
+ingress:
+  - service: https://localhost:8003" > ~/.cloudflared/config.yml
+        
+        #symlink config.yml
+        sudo ln -sf ~/.cloudflared/config.yml /etc/cloudflared/config.yml
+        
+        sudo cloudflared service install
+    else
+        echo "
+Updating ~/.cloudflared/config.yml file
+"
+
+        #replace tunnel: and credentials-file: values in config.yml with $tunnel_id, just to be safe
+        sed -i "s/tunnel: .*/tunnel: $tunnel_id/" ~/.cloudflared/config.yml
+        sed -i "s/credentials-file: .*/credentials-file: \/home\/nick\/.cloudflared\/$tunnel_id.json/" ~/.cloudflared/config.yml
+        sudo ln -sf ~/.cloudflared/config.yml /etc/cloudflared/config.yml
+    fi
+    
+}
+
+
+serve (){
+    
+    # need this to receive fqdn(s) from user
+    read -p "Enter the fully qualified domain(s) you want to serve separated by a space (e.g. ddev.xyz.com bob.xyz.com test.ddev.abc.net): 
+
+" -a domain_list
+    
+    # check if anything was entered
+    if [ ${#domain_list[@]} -eq 0 ]; then
+        echo "No domains entered. Exiting..."
+        exit 1
+    fi
+    
+    
+    # read tunnel+id from json config
+    # Get the first JSON file in the directory
+    json_file=$(ls ~/.cloudflared/*.json | head -n 1)
+    
+    # Extract the filename without the path and extension
+    filename_without_extension="${json_file##*/}"
+    tunnel_id="${filename_without_extension%.json}"
+    
+    declare -A dns_records
+    declare -a new_fqdns
+
+    # add a CNAME to CF and tunnel route to ~/.cloudflared/config.yml for each fqdns user submitted
+    for i in "${domain_list[@]}"
+    do
+        # Extract the domain (site.com)
+        domain=$(echo "$i" | rev | cut -d'.' -f1-2 | rev)
+
+        # Extract the cname (asdf.zxcv.qwer)
+        cname=$(echo "$i" | rev | cut -d'.' -f3- | rev)
+       
+        #check if dns_records["$domain"] is already set, to avoid making multiple API requests for the same domain
+        if [[ -z ${dns_records["$domain"]} ]]; then
+            # Get the DNS records for the domain
+            dns_records["$domain"]=$(~/.ddev/bin/flarectl --json dns list --zone $domain --type cname)
+        fi
+        
+        # If the domain exists in Cloudflare, proceed
+        if [[ ${dns_records["$domain"]} != "zone could not be found" ]]; then
+            # add $i to new_fqdns, to be added to project's .ddev/config.yaml if it isn't there yet
+            new_fqdns+=("$i")
+            
+            # find matching record in dns_records["$domain"] for $cname
+            matching_record=$(echo "${dns_records["$domain"]}" | jq --arg cname $i '.[] | select(.Name == $cname)')
+            
+            create_dns_record=true
+            # If a match was found, then check if the tunnel_id in local cf tunnel route file (~/.cloudflared/config.yml) matches what is in the CF DNS record. If not, flag to update it
+            if [[ -n $matching_record ]]; then
+                # Extract the Content field from the JSON stored in matching_record
+                content=$(echo "$matching_record" | jq -r '.Content')
+                
+                # Check if the Content field of CNAME record matches current $tunnel_id.cfargotunnel.com. If so, then flag not to update the record. Otherwise it will be updated
+                if [[ $content == "$tunnel_id.cfargotunnel.com" ]]; then
+                    create_dns_record=false
+                    echo "
+    CNAME $cname exists for domain $domain and tunnel $tunnel_id.
+    "
+                else
+                echo "
+    CNAME $cname exists for domain $domain but is associated with tunnel $content rather than the currently logged-in tunnel $tunnel_id.
+    "
+                fi
+            fi
+            
+            #create missing record or update if its tunnel_id doesnt match the current logged in CF tunnel id
+            if $create_dns_record; then
+                echo "
+    Updating $cname CNAME record for domain $domain and tunnel $tunnel_id."
+                update_response=$(~/.ddev/bin/flarectl --json dns create-or-update --zone $domain --type cname --name $cname --content "$tunnel_id.cfargotunnel.com" --proxy true)
+                
+                
+            fi
+            # if the record was successfully updated, add the route to ~/.cloudflared/config.yml if it isn't there already
+            if ! grep -q "hostname: $i" ~/.cloudflared/config.yml; then
+                echo "
+Adding CF Tunnel route for $i
+    "
+                awk '
+                    /service: https:\/\/localhost:8003/ {
+                        print "  - hostname: '"$i"'"
+                        print "    service: https://localhost:443"
+                    }
+                    { print }
+                ' ~/.cloudflared/config.yml > temp.yml && mv temp.yml ~/.cloudflared/config.yml
+    
+                # # Step 1: Get all except the last line and write to temp file
+                # head -n -1 ~/.cloudflared/config.yml > temp.yml
+
+                # # Step 2: Echo new lines to be inserted
+                # echo "  - hostname: $i" >> temp.yml
+                # echo "    service: https://localhost:443" >> temp.yml
+
+                # # Step 3: Append the last line from the original file
+                # tail -n 1 ~/.cloudflared/config.yml >> temp.yml
+
+                # # Step 4: Replace the original file with the temp file
+                # mv temp.yml ~/.cloudflared/config.yml
+            fi
+        else
+            # invalid domain/zone was provided. 
+            echo "
+    ${dns_records["$domain"]}: $domain
+
+"
+            # remove $i from $domain_list because it isn't a valid fqdns (for the provided CF credentials)
+            #domain_list=(${domain_list[@]/$i}) # probably not needed now. Have new_fqdns list that is used to update .ddev/config.yaml, which excludes invalid zones
+        fi
+    done
+    
+    need_restart=false
+    # add eligible domains to additional_fqdns in $PWD/.ddev/config.yaml
+    for i in "${new_fqdns[@]}"
+    do
+        i_trimmed=$(echo "$i" | xargs)
+        if ! grep -q "$i_trimmed" $PWD/.ddev/config.yaml; then
+            ddev exec "yq e \".additional_fqdns += [\\\"$i_trimmed\\\"]\" -i .ddev/config.yaml"
+            need_restart=true
+        fi
+        
+    done
+    
+    # Check if new_fqdns array is not empty, meaning that a new fqdns was added and ddev needs to be restarted for traefik to recognize the route
+    if $need_restart; then
+        ddev restart
+    fi
+    
+    sudo systemctl restart cloudflared.service
+    exit
+    #nohup ~/.ddev/bin/cloudflared tunnel run > /dev/null 2>&1 &
+    
+}
+
+# cleanup_cnames() {
+    
+# }
+
+main() {
+    case "$1" in
+        "install")
+            install
+            ;;
+        "connect")
+            connect
+            ;;
+        "serve")
+            serve
+            ;;
+        # Add more cases as needed for other functions
+        *)
+            echo "Usage: $0 {functionName1|functionName2}"
+            exit 1
+            ;;
+    esac
+}
+
+# Call the main function with all CLI arguments
+main "$@"
