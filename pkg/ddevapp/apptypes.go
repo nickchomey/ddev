@@ -212,7 +212,11 @@ func init() {
 			hookDefaultComments:  getWordpressHooks,
 			appTypeSettingsPaths: setWordpressSiteSettingsPaths,
 			appTypeDetect:        isWordpressApp,
-			importFilesAction:    wordpressImportFilesAction,
+			configOverrideAction: wordpressConfigOverrideAction,
+			postConfigAction:     wordpressPostConfigAction,
+			postStartAction:      wordpressPostStartAction,
+ 			importFilesAction:    wordpressImportFilesAction,
+			
 		},
 	}
 

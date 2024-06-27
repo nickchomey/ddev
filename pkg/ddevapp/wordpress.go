@@ -308,3 +308,85 @@ func wordpressGetRelativeAbsPath(app *DdevApp) (string, error) {
 
 	return absPath, nil
 }
+
+// wordpressConfigOverrideAction sets custom parameters that are needed for a WP app to work properly
+func wordpressConfigOverrideAction(app *DdevApp) error {
+	// This allows a standard wp-config.php to choose between loading from wp-config-development or using default parameters. It is also the standard mechanism that plugins use to toggle behaviour based on what sort of environment is currrently running
+	app.WebEnvironment = []string{"WP_ENVIRONMENT_TYPE=development", "WPURL=site.com"}
+	
+	// set php to 8.1 because it has better compatibility with Wordpress 
+    // as of WP 6.5, php 8.1 is "compatible, with exceptions" while 8.2 has "beta support"
+    // https://make.wordpress.org/core/handbook/references/php-compatibility-and-wordpress-versions/
+	app.PHPVersion = "8.1"
+	
+	
+	
+	/* if app.WebserverType == nodeps.WebserverDefault {
+		app.WebserverType = nodeps.WebserverNginxGunicorn
+	}
+	if app.Database == DatabaseDefault {
+		app.Database.Type = nodeps.Postgres
+		app.Database.Version = nodeps.Postgres14
+	} */
+	return nil
+}
+
+// wordpressPostConfigAction 
+func wordpressPostConfigAction(app *DdevApp) error {
+	
+	// create a working copy of the default middleware-template.yaml.example file
+	
+	// Read the entire source file into memory
+    data, err := os.ReadFile(app.GetConfigPath(".middleware-template.yaml.example"))
+    if err != nil {
+        return err
+    }
+
+    // Write the data to the destination file
+    // The permissions are set to 0644, but you can adjust as needed
+    err = os.WriteFile(app.GetConfigPath(".middleware-template.yaml"), data, 0644)
+    if err != nil {
+        return err
+    }
+
+    return nil
+}
+
+// wordpressPostStartAction 
+func wordpressPostStartAction(app *DdevApp) error {
+	
+	/* need to see if this runs before or after traefik router is created
+	
+	
+	
+	
+	
+	
+	
+	/* if app.DisableSettingsManagement {
+		return nil
+	}
+	envFilePath := filepath.Join(app.AppRoot, ".env.local")
+	_, envText, err := ReadProjectEnvFile(envFilePath)
+	var envMap = map[string]string{
+		"DATABASE_URL": `mysql://db:db@db:3306/db`,
+		"APP_ENV":      "dev",
+		"APP_URL":      app.GetPrimaryURL(),
+		"MAILER_DSN":   `smtp://127.0.0.1:1025?encryption=&auth_mode=`,
+	}
+	// If the .env.local doesn't exist, create it.
+	switch {
+	case err == nil:
+		util.Warning("Updating %s with %v", envFilePath, envMap)
+		fallthrough
+	case errors.Is(err, os.ErrNotExist):
+		err := WriteProjectEnvFile(envFilePath, envMap, envText)
+		if err != nil {
+			return err
+		}
+	default:
+		util.Warning("error opening %s: %v", envFilePath, err)
+	}
+	*/
+	return nil 
+}

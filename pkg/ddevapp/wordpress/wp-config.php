@@ -49,7 +49,7 @@ if ($env_type != "production" ) {
 }
 
 
-// ** Database settings - You can get this info from your web host ** //
+// ** Production site database settings - You can get this info from your web host ** //
 
 /** The name of the database for WordPress */
 defined('DB_NAME') || define('DB_NAME', '{{ $config.DatabaseName }}');
@@ -69,14 +69,6 @@ defined('DB_CHARSET') || define('DB_CHARSET', '{{ $config.DbCharset }}');
 /** The database collate type. Don't change this if in doubt. */
 defined('DB_COLLATE') || define('DB_COLLATE', '{{ $config.DbCollate }}');
 
-
-// NOTE: Commented-out, because really this can just be set in the DB open install/import. This should solve the problem of what to do about the dev URL... Though, DDEV is still going to create a Traefik rule and hosts file entry. Moreover, having it managed anywhere by ddev messes everything up in the DB when posts, links and uploads are created.
-
-// /** WP_HOME URL */
-// defined('WP_HOME') || define('WP_HOME', '{{ $config.DeployURL }}');
-
-// /** WP_SITEURL location */
-// defined('WP_SITEURL') || define('WP_SITEURL', WP_HOME . '/{{ $config.AbsPath  }}');
 
 /**#@+
  * Authentication unique keys and salts.
