@@ -225,7 +225,7 @@ func TestTraefikStaticConfig(t *testing.T) {
 			require.NoError(t, err)
 			unmarshalledActualString, err := yaml.Marshal(tmpMap)
 			require.NoError(t, err)
-			
+
 			require.Equal(t, string(unmarshalledExpectationString), string(unmarshalledActualString))
 		})
 	}
