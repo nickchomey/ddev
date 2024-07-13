@@ -1,3 +1,5 @@
+experimental:
+  plugins:
     rewrite-response-body:
       moduleName: "github.com/the-ccsn/traefik-plugin-rewritebody"
       version: "v0.1.3"
