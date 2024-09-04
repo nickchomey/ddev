@@ -1,8 +1,7 @@
 #ddev-generated
 http:
   middlewares:
-    redirectHttps-{{.App.Name}}:
+    testApp-redirectHttps:
       redirectScheme:
         scheme: https
         permanent: true
-    
