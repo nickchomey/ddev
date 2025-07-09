@@ -18,6 +18,7 @@ import (
 var snapshotAll bool
 var snapshotCleanup bool
 var snapshotList bool
+var snapshotOverwrite bool
 var snapshotName string
 var snapshotRestoreLatest bool
 
@@ -34,6 +35,8 @@ var DdevSnapshotCommand = &cobra.Command{
 ddev snapshot --name some_descriptive_name
 ddev snapshot --cleanup
 ddev snapshot --cleanup -y
+ddev snapshot --overwrite
+ddev snapshot --overwrite -y
 ddev snapshot --list
 ddev snapshot --all`,
 	Run: func(_ *cobra.Command, args []string) {
@@ -116,6 +119,7 @@ func listSnapshots(apps []*ddevapp.DdevApp) {
 }
 
 func createAppSnapshot(app *ddevapp.DdevApp) {
+
 	// If the database is omitted, do not snapshot
 	omittedContainers := app.GetOmittedContainers()
 	if nodeps.ArrayContainsString(omittedContainers, "db") {
@@ -131,6 +135,32 @@ func createAppSnapshot(app *ddevapp.DdevApp) {
 			util.Failed("Failed to start %s: %v", app.GetName(), err)
 		}
 	}
+
+	if snapshotName != "" {
+		existingSnapshots, err := app.ListSnapshotNames()
+		if err != nil {
+			util.Failed("Failed to list snapshots for %s: %v", app.GetName(), err)
+			return
+		}
+		if nodeps.ArrayContainsString(existingSnapshots, snapshotName) {
+			if !snapshotOverwrite {
+				util.Warning("Snapshot %s already exists for project %s, please use another snapshot name, clean up snapshots with `ddev snapshot --cleanup, or use --overwrite to replace it.`", snapshotName, app.GetName())
+				return
+			}
+			if !snapshotCleanupNoConfirm {
+				prompt := fmt.Sprintf("Snapshot '%s' already exists for project '%s'. Overwrite?", snapshotName, app.GetName())
+				if !util.Confirm(prompt) {
+					util.Success("Skipped overwriting snapshot '%s' for project '%s'.", snapshotName, app.GetName())
+					return
+				}
+			}
+			if err := app.DeleteSnapshot(snapshotName); err != nil {
+				util.Failed("Failed to delete existing snapshot %s: %v", snapshotName, err)
+			}
+		}
+	}
+
+
 	// If there is an error from Snapshot, show a warning message
 	// allow the command to continue, there may be other snapshots needed
 	if snapshotNameOutput, err := app.Snapshot(snapshotName); err != nil {
@@ -188,6 +218,7 @@ func deleteAppSnapshot(app *ddevapp.DdevApp) {
 func init() {
 	DdevSnapshotCommand.Flags().BoolVarP(&snapshotAll, "all", "a", false, "Snapshot all projects. Will start the project if it is stopped or paused")
 	DdevSnapshotCommand.Flags().BoolVarP(&snapshotList, "list", "l", false, "List snapshots")
+	DdevSnapshotCommand.Flags().BoolVarP(&snapshotOverwrite, "overwrite", "o", false, "Overwrite snapshots")
 	DdevSnapshotCommand.Flags().BoolVarP(&snapshotCleanup, "cleanup", "C", false, "Cleanup snapshots")
 	DdevSnapshotCommand.Flags().BoolVarP(&snapshotCleanupNoConfirm, "yes", "y", false, "Yes - skip confirmation prompt")
 	DdevSnapshotCommand.Flags().StringVarP(&snapshotName, "name", "n", "", "provide a name for the snapshot")
